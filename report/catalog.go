@@ -91,7 +91,7 @@ type Descriptor struct {
 	// IdentityCritical marks modules without which a report may be
 	// unattributable or non-actionable. Disabling one warrants a warning.
 	IdentityCritical bool
-	// GatewayEssential marks modules the Visvasity gateway requires to perform
+	// GatewayEssential marks modules the HostCheck Gateway requires to perform
 	// its core functions (attributing a host, rendering the exposure dashboard,
 	// and alerting on open-port changes). The gateway may reject an upload that
 	// omits any of these.

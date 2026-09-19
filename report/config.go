@@ -93,7 +93,7 @@ func (c Config) DisabledIdentityCritical() []string {
 }
 
 // ValidateForGateway returns an error if any gateway-essential module is
-// disabled. Callers uploading to the Visvasity gateway should reject such a
+// disabled. Callers uploading to the HostCheck Gateway should reject such a
 // config, and the gateway may reject the resulting upload.
 func (c Config) ValidateForGateway() error {
 	var missing []string

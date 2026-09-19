@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Visvasity LLC
 
-// Command hostcheck is the Visvasity host-check agent. It collects a host's
+// Command hostcheck is the HostCheck agent. It collects a host's
 // security-relevant state and (in later milestones) diffs it against a baseline
 // and reports changes. Install with:
 //
