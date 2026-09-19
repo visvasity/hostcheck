@@ -4,28 +4,28 @@ package subcmds
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/visvasity/appdirs"
 	"github.com/visvasity/cli"
-	"github.com/visvasity/hostcheck/linuxcheck"
 	"github.com/visvasity/hostcheck/report"
 	"github.com/visvasity/logdir"
 	"github.com/visvasity/runcmd"
 )
 
-// ServeCmd runs the host-check agent as a service: it collects a report on a
-// fixed interval and writes it to the data directory. Wrapped by runcmd.Wrap, it
-// gains -background, -restart, and -self-monitor for systemd/daemon use.
+// ServeCmd runs the host-check agent as a service: on a fixed interval it
+// collects a report, records it as the current state, and diffs it against the
+// baseline, logging any changes. Wrapped by runcmd.Wrap, it gains -background,
+// -restart, and -self-monitor for systemd/daemon use.
 //
-// Baseline diffing, alerting, and upload are added in later milestones; for now
-// each run overwrites the latest report.
+// The baseline is never auto-established: until an operator runs `hostcheck
+// accept`, change detection is inactive (the service still records the current
+// snapshot). Alerting and upload are added in later milestones.
 type ServeCmd struct {
 	dirs appdirs.Config
 
@@ -85,25 +85,38 @@ func (c *ServeCmd) run(ctx context.Context, args []string) error {
 		slog.SetDefault(sink.Logger(""))
 	}
 
-	if err := os.MkdirAll(c.dirs.DataDir, 0o700); err != nil {
-		return fmt.Errorf("could not create data dir %q: %w", c.dirs.DataDir, err)
-	}
-
-	runner := linuxcheck.LocalRunner()
-	reg := linuxcheck.DefaultRegistry()
-
-	collect := func() {
-		rep := linuxcheck.CollectReport(ctx, reg, runner, report.Config{}, linuxcheck.Options{})
-		if err := writeReport(c.dirs.DataDir, rep); err != nil {
-			slog.Error("could not write report", "err", err)
+	check := func() {
+		cur, err := collectAndRecord(ctx, c.dirs.DataDir, report.Config{})
+		if err != nil {
+			slog.Error("collect failed", "err", err)
 			return
 		}
-		slog.Info("collected report", "enabled_modules", len(rep.EnabledModules), "generated_at", rep.GeneratedAt)
+		base, err := loadBaseline(c.dirs.DataDir)
+		if errors.Is(err, os.ErrNotExist) {
+			// The baseline is never auto-established; it must be an explicit
+			// operator action. Until then, change detection is inactive (the
+			// current snapshot is still recorded for `accept` and inspection).
+			slog.Warn("no baseline established; change detection inactive — run `hostcheck accept` to establish one", "data_dir", c.dirs.DataDir)
+			return
+		}
+		if err != nil {
+			slog.Error("could not load baseline", "err", err)
+			return
+		}
+		d := report.Diff(base, cur)
+		if d.Changed() {
+			slog.Warn("changes detected since baseline", "incidents", len(d.Incidents), "coverage", len(d.Coverage))
+			for _, ch := range d.Incidents {
+				slog.Warn("change", "path", ch.Path, "kind", string(ch.Kind), "old", ch.Old, "new", ch.New)
+			}
+		} else {
+			slog.Info("no changes since baseline")
+		}
 	}
 
-	// First collection doubles as the initialization step; report its outcome to
-	// the foreground/monitor process so -background can succeed or fail fast.
-	collect()
+	// First check doubles as the initialization step; report its outcome to the
+	// foreground/monitor process so -background can succeed or fail fast.
+	check()
 	runcmd.Report(ctx, nil)
 
 	ticker := time.NewTicker(c.interval)
@@ -115,33 +128,7 @@ func (c *ServeCmd) run(ctx context.Context, args []string) error {
 			slog.Info("host-check agent stopping", "cause", context.Cause(ctx))
 			return nil
 		case <-ticker.C:
-			collect()
+			check()
 		}
 	}
-}
-
-// writeReport writes rep as indented JSON to <dir>/report.json atomically
-// (write to a temp file, then rename).
-func writeReport(dir string, rep *report.Report) error {
-	data, err := json.MarshalIndent(rep, "", "  ")
-	if err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, "report-*.json.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(tmpName, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, filepath.Join(dir, "report.json"))
 }

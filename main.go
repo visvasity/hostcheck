@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 
@@ -17,15 +18,24 @@ import (
 	"github.com/visvasity/runcmd"
 )
 
+// Exit codes: 0 = success/no change, 1 = changes detected (check), 2 = error.
 func main() {
 	cmds := []cli.Command{
+		new(subcmds.CheckCmd),
+		new(subcmds.DiffCmd),
+		new(subcmds.AcceptCmd),
 		new(subcmds.CollectCmd),
 		new(subcmds.ExplainCmd),
 		new(subcmds.VersionCmd),
 		runcmd.Wrap(new(subcmds.ServeCmd)),
 	}
-	if err := cli.Run(context.Background(), cmds, os.Args[1:]); err != nil {
-		slog.Error("failed", "err", err)
-		os.Exit(1)
+	err := cli.Run(context.Background(), cmds, os.Args[1:])
+	if err == nil {
+		return
 	}
+	if errors.Is(err, subcmds.ErrChanged) {
+		os.Exit(1) // changes detected — not an operational failure
+	}
+	slog.Error("failed", "err", err)
+	os.Exit(2)
 }
