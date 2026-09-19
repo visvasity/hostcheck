@@ -25,6 +25,7 @@ func main() {
 		new(subcmds.DiffCmd),
 		new(subcmds.AcceptCmd),
 		new(subcmds.CollectCmd),
+		new(subcmds.UploadCmd),
 		new(subcmds.ExplainCmd),
 		new(subcmds.VersionCmd),
 		runcmd.Wrap(new(subcmds.ServeCmd)),
