@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Visvasity LLC
 
+// Package subcmds implements the gateway server's command-line subcommands on
+// top of github.com/visvasity/cli.
 package subcmds
 
 import (
@@ -21,6 +23,6 @@ func (c *VersionCmd) Command() (string, *flag.FlagSet, cli.CmdFunc) {
 }
 
 func (c *VersionCmd) run(ctx context.Context, args []string) error {
-	fmt.Printf("hostcheck %s\n", buildinfo.Version())
+	fmt.Printf("gateway %s\n", buildinfo.Version())
 	return nil
 }
